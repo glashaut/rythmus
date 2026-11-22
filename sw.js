@@ -1,5 +1,5 @@
 // Minimaler Service Worker: App-Hülle zwischenspeichern, Daten immer frisch aus dem Netz.
-const CACHE = 'rhythmus-v4';
+const CACHE = 'rhythmus-v6';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
@@ -13,7 +13,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   // Nur eigene Dateien; Spotify und Rhythmus-Dienst nie zwischenspeichern
-  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.includes('/api/')) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {
