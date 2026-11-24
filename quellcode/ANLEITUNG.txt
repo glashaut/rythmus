@@ -1,0 +1,426 @@
+==================================================================
+  RHYTHMUS-APP  –  Komplette Anleitung (Version 0.10)
+==================================================================
+
+Die App schlägt dir Titel aus dem ganzen Spotify-Katalog vor –
+quer durch alle Genres, sortiert nur nach Rhythmus (Tempo,
+Tanzbarkeit, Energie). Sie lernt aus deinen Spotify-Lieblingssongs
+und aus deinem Ja/Nein.
+
+  Ja    -> Titel wird in deinen Spotify-Lieblingssongs gespeichert
+  Nein  -> Titel kommt in die private Playlist "Rhythmus-Abgelehnt"
+           (ein Nein verblasst mit der Zeit, der Titel kann nach
+           ca. 2 Wochen wieder auftauchen)
+
+Alles wird bei Spotify gespeichert. Deshalb sind Handy und PC
+immer auf demselben Stand.
+
+
+------------------------------------------------------------------
+INHALT
+------------------------------------------------------------------
+  1. Was du brauchst
+  2. Spotify-Entwickler-App anlegen (einmalig)
+  3. Windows-Programm Rhythmus.exe (empfohlen für den PC)
+  3b. App am PC ohne exe starten (mit Python)
+  4. App online stellen (nötig fürs Handy)
+  5. App aufs Handy installieren
+  6. Bedienung
+  7. Auf eine neue Version aktualisieren
+  8. Wenn etwas nicht klappt
+  9. Gut zu wissen
+
+
+------------------------------------------------------------------
+1. WAS DU BRAUCHST
+------------------------------------------------------------------
+  - Spotify Premium (Pflicht für eigene Spotify-Apps und für
+    das Abspielen ganzer Titel)
+  - Die Datei rhythmus-app.zip, entpackt auf deinem PC
+  - Für den PC: die Datei Rhythmus.exe (Windows 10/11)
+    oder alternativ Python (siehe Schritt 3b)
+  - Fürs Handy: ein kostenloses GitHub-Konto (siehe Schritt 4)
+
+Wichtig ist nur der Ordner "dist" in der ZIP-Datei. Darin liegt
+die fertige App. Die anderen Ordner sind der Quellcode.
+
+
+------------------------------------------------------------------
+2. SPOTIFY-ENTWICKLER-APP ANLEGEN (EINMALIG)
+------------------------------------------------------------------
+Spotify verlangt, dass jede eigene App dort angemeldet ist.
+
+  1. Öffne im Browser:  https://developer.spotify.com/dashboard
+     und melde dich mit deinem normalen Spotify-Konto an.
+
+  2. Klicke auf "Create app".
+
+  3. Formular ausfüllen:
+       App name:         Rhythmus
+       App description:  Vorschläge nach Rhythmus
+       Redirect URIs:    http://127.0.0.1:5173/
+                         -> eintippen und rechts auf "Add" klicken!
+       (Später kommt die GitHub-Adresse dazu, siehe Schritt 4.)
+
+       Bei "Which API/SDKs are you planning to use?"
+       ankreuzen:  [x] Web API   und   [x] Web Playback SDK
+
+  4. Nutzungsbedingungen anhaken, "Save" klicken.
+
+  5. Auf der nächsten Seite steht die "Client ID"
+     (32 Zeichen, nur Ziffern und a–f). Die brauchst du gleich.
+     ACHTUNG: Nicht das "Client Secret" darunter nehmen.
+
+Eine Redirect URI später hinzufügen oder ändern:
+  Dashboard -> deine App -> Settings -> Edit -> Adresse eintippen
+  -> "Add" -> ganz unten "Save".
+
+Die Adresse muss Zeichen für Zeichen stimmen, inklusive des
+Schrägstrichs am Ende. "localhost" akzeptiert Spotify nicht,
+deshalb 127.0.0.1.
+
+
+------------------------------------------------------------------
+3. WINDOWS-PROGRAMM RHYTHMUS.EXE (EMPFOHLEN FÜR DEN PC)
+------------------------------------------------------------------
+Die exe enthält die komplette App. Du brauchst kein Python und
+kein schwarzes Fenster. Deine Eingaben (Client ID, Anmeldung,
+analysierte Rhythmusdaten) werden dauerhaft gespeichert.
+
+Installieren:
+  1. Rhythmus.exe herunterladen und doppelklicken.
+  2. Windows warnt beim ersten Mal ("Der Computer wurde durch
+     Windows geschützt"), weil das Programm nicht von einer Firma
+     signiert ist. Klicke auf "Weitere Informationen" und dann
+     auf "Trotzdem ausführen".
+  3. Das Programm installiert sich selbst nach
+        %LOCALAPPDATA%\Programs\Rhythmus
+     und legt Verknüpfungen an:
+        - Desktop:   "Rhythmus"
+        - Startmenü: "Rhythmus" und "Rhythmus deinstallieren"
+  4. Die App öffnet sich in einem eigenen Fenster (Microsoft Edge
+     im App-Modus). Beim ersten Mal Client ID eingeben, anmelden.
+     Als Redirect URI im Spotify-Dashboard genügt
+        http://127.0.0.1:5173/
+     (dieselbe wie in Schritt 2).
+
+Die heruntergeladene Rhythmus.exe kannst du danach löschen.
+
+Starten: Verknüpfung "Rhythmus" auf dem Desktop oder im Startmenü.
+Tipp: Im Startmenü Rechtsklick auf "Rhythmus" -> "An Taskleiste
+anheften". Das Rhythmus-Logo erscheint in Taskleiste und Titelleiste.
+Zeigt eine alte Verknüpfung noch das alte Symbol, liegt das am
+Symbol-Speicher von Windows – nach einem Neustart ist es aktuell.
+
+Beenden: Einfach das App-Fenster schließen. Das Programm im
+Hintergrund beendet sich nach spätestens 10 Minuten von selbst.
+
+Wo die Daten liegen:
+  %APPDATA%\Rhythmus\daten.json
+  (Client ID, Anmeldung bei Spotify, Gerätewahl, Zwischenspeicher
+  der Rhythmusdaten. Deine Lieblingssongs und Bewertungen liegen
+  wie immer bei Spotify.)
+
+Aktualisieren: Neue Rhythmus.exe herunterladen und doppelklicken.
+Sie ersetzt die installierte Version automatisch, deine Daten
+bleiben erhalten.
+
+Deinstallieren: Startmenü -> "Rhythmus deinstallieren". Du wirst
+gefragt, ob auch die gespeicherten Daten gelöscht werden sollen.
+
+Ohne Installation (z. B. USB-Stick): Lege neben die Rhythmus.exe
+eine leere Datei namens portable.txt. Dann startet sie direkt,
+ohne sich zu installieren.
+
+Hinweis: Python-Server (Schritt 3b) und Rhythmus.exe nutzen
+denselben Anschluss 5173 und können nicht gleichzeitig laufen.
+
+
+------------------------------------------------------------------
+3b. APP AM PC OHNE EXE STARTEN (MIT PYTHON)
+------------------------------------------------------------------
+So läuft die App nur auf diesem PC. Fürs Handy siehe Schritt 4.
+
+Einmalig: Python installieren
+  Windows: Microsoft Store öffnen -> "Python" suchen -> installieren
+           (oder von https://www.python.org)
+  Mac:     meist schon vorhanden (Befehl heißt dort python3)
+
+Jedes Mal, wenn du die App am PC nutzen willst:
+  1. Den entpackten Ordner "dist" im Explorer öffnen.
+     (Nicht "rhythmus-app", sondern den Unterordner "dist"!)
+  2. Oben in die Adresszeile des Explorers klicken, "cmd" tippen,
+     Enter drücken. Ein schwarzes Fenster öffnet sich.
+  3. Dort eingeben und Enter drücken:
+        python -m http.server 5173 --bind 127.0.0.1
+     (Mac: python3 statt python)
+  4. Im Browser (Chrome, Edge oder Firefox) in die Adresszeile
+     tippen:   127.0.0.1:5173
+  5. Beim ersten Mal: Client ID einfügen -> "Weiter" ->
+     "Mit Spotify anmelden" -> bei Spotify zustimmen.
+
+Das schwarze Fenster muss offen bleiben, solange du die App
+nutzt. Zum Beenden: Fenster schließen oder Strg + C drücken.
+
+Kontrolle: Im schwarzen Fenster sollten Zeilen mit "200" am Ende
+stehen. Steht dort "404", ist der Server im falschen Ordner
+gestartet -> Strg + C, dann "cd dist", dann Befehl aus 3. erneut.
+
+
+------------------------------------------------------------------
+4. APP ONLINE STELLEN (NÖTIG FÜRS HANDY)
+------------------------------------------------------------------
+Das Handy braucht eine https-Adresse. GitHub Pages ist kostenlos.
+Am einfachsten am PC erledigen.
+
+  1. Konto anlegen auf https://github.com (kostenlos).
+
+  2. Oben rechts "+" -> "New repository"
+       Repository name:  rhythmus
+       Sichtbarkeit:     Public (nötig für kostenloses Hosting;
+                         dort liegt nur der App-Code, keine
+                         Spotify-Daten oder Passwörter)
+     -> "Create repository"
+
+  3. Auf der neuen Seite auf "uploading an existing file" klicken.
+     Den INHALT des Ordners "dist" ins Browserfenster ziehen
+     (index.html, Ordner assets, icon-192.png, icon-512.png,
+     manifest.webmanifest, sw.js) – nicht den Ordner dist selbst.
+     Unten "Commit changes" klicken.
+
+  4. Im Repository: "Settings" -> links "Pages"
+       Source:  Deploy from a branch
+       Branch:  main   Ordner: / (root)   -> "Save"
+
+  5. Nach 1–2 Minuten ist die App erreichbar unter:
+        https://DEINNAME.github.io/rhythmus/
+     (DEINNAME = dein GitHub-Benutzername)
+
+  6. Diese Adresse im Spotify-Dashboard ZUSÄTZLICH als Redirect URI
+     eintragen (siehe Schritt 2, "später hinzufügen").
+     Die 127.0.0.1-Adresse kann bleiben.
+
+  7. Adresse im Browser öffnen, Client ID eingeben, anmelden.
+
+
+------------------------------------------------------------------
+5. APP AUFS HANDY INSTALLIEREN
+------------------------------------------------------------------
+Die App wird keine App aus dem App-Store, verhält sich aber wie
+eine: eigenes Symbol, startet ohne Browserleiste.
+
+  Android:
+    1. https://DEINNAME.github.io/rhythmus/ in Chrome öffnen
+    2. Menü (drei Punkte) -> "App installieren" bzw.
+       "Zum Startbildschirm hinzufügen"
+
+  iPhone:
+    1. Die Adresse in Safari öffnen
+    2. Teilen-Symbol -> "Zum Home-Bildschirm"
+
+  Danach:
+    3. Die installierte App öffnen (über das neue Symbol)
+    4. Client ID noch einmal eingeben, anmelden
+       (jedes Gerät merkt sich die Anmeldung separat;
+       deine Lieblingssongs sind sofort da)
+
+Abspielen am Handy:
+  Die App steuert deine Spotify-App fern und spielt dort ganze
+  Titel. Dazu muss die Spotify-App vorher einmal kurz geöffnet
+  worden sein (einfach irgendeinen Titel kurz antippen). Dann in
+  der Rhythmus-App bei "Abspielen auf" dein Handy auswählen.
+
+Sperrbildschirm (Android):
+  Weil die Musik in der Spotify-App läuft, zeigt Android dort die
+  Spotify-Steuerung. Die Rhythmus-App schickt immer die nächsten
+  ca. 15 Vorschläge mit, deshalb gilt dort:
+    ⏯   Pause / Weiter
+    ⏭   nächster Vorschlag (wie "Später")
+    ⏮   Anfang des Titels / vorheriger Vorschlag
+    ♥ bzw. +  in deinen Lieblingssongs speichern = zählt als "Ja"
+  Ist ein Titel zu Ende, läuft automatisch der nächste Vorschlag.
+  Öffnest du die Rhythmus-App wieder, zeigt sie den Titel an, der
+  gerade läuft. "Nein" geht nur in der App selbst.
+
+
+------------------------------------------------------------------
+6. BEDIENUNG
+------------------------------------------------------------------
+Reiter "Entdecken"
+  - Oben steht, warum der Titel vorgeschlagen wird
+    ("Ähnlicher Rhythmus wie ..." oder "Ausreißer").
+  - "Abspielen auf": wählt das Gerät, auf dem der Titel läuft.
+      💻 Rhythmus-App (dieser Browser)  -> am PC direkt im Browser
+      📱 dein Handy                     -> Spotify-App am Handy
+      🔊 andere                         -> Spotify am PC, Lautsprecher
+    ⟳ sucht die Geräte neu. Wechselst du das Gerät während ein Titel
+    läuft, spielt er an derselben Stelle auf dem neuen Gerät weiter.
+  - Wiedergabe: ▶ / ❚❚, −15 s, +15 s, +1 min, und der Regler, um an
+    jede Stelle im Lied zu springen.
+  - ♡ neben dem Titel: als Lieblingssong speichern, das Lied spielt
+    dabei einfach weiter (♥ = gespeichert, nochmal tippen = entfernen).
+    "Ja" speichert ebenfalls, springt aber sofort zum nächsten Titel.
+  - Ja / Nein: speichert die Bewertung und startet sofort den
+    nächsten Titel.
+  - Später: nächster Titel ohne Bewertung.
+  - Läuft ein Titel zu Ende, ohne dass du Ja oder Nein gedrückt
+    hast, startet automatisch der nächste Vorschlag.
+  - Unbewertete Titel (zu Ende gelaufen, "Später", ⏭ im
+    Sperrbildschirm) kommen nach etwa 10 weiteren Vorschlägen oder
+    spätestens nach 30 Minuten wieder – erkennbar am Hinweis
+    "🔁 Nochmal zur Auswahl". Nach dem 3. Mal ohne Bewertung ist
+    Schluss. Das klappt auch nach einem Neustart der App.
+  - Den allerersten Titel startest du selbst mit ▶.
+
+Reiter "Favoriten"
+  - Alle deine Spotify-Lieblingssongs. Alle fließen ins Lernen ein.
+  - Beim ersten Start werden sie analysiert (Fortschritt wird oben
+    angezeigt). Bei vielen Songs dauert das ein paar Minuten, die
+    App ist trotzdem sofort benutzbar.
+  - "Entfernen" löscht den Titel aus deinen Spotify-Lieblingssongs
+    (mit Rückfrage).
+
+Reiter "Suchen"
+  - Titel oder Interpret suchen, mit "+ Favorit" als
+    Lieblingssong speichern.
+
+
+------------------------------------------------------------------
+7. AUF EINE NEUE VERSION AKTUALISIEREN
+------------------------------------------------------------------
+Windows-Programm:
+  Neue Rhythmus.exe doppelklicken – fertig (siehe Schritt 3).
+
+Am PC mit Python (Schritt 3b):
+  1. Neue ZIP entpacken.
+  2. Inhalt deines alten "dist"-Ordners durch den neuen ersetzen.
+  3. Im Browser Strg + Umschalt + R drücken.
+
+Online (GitHub Pages):
+  1. Im Repository "Add file" -> "Upload files".
+  2. Den Inhalt des neuen "dist"-Ordners hineinziehen
+     (gleichnamige Dateien werden überschrieben) -> "Commit changes".
+  3. 1–2 Minuten warten. Am Handy die App schließen und neu öffnen
+     (notfalls zweimal).
+
+Fragt die App nach einer neuen Anmeldung: einfach neu anmelden.
+Neue Funktionen brauchen manchmal zusätzliche Spotify-Rechte.
+
+
+------------------------------------------------------------------
+8. WENN ETWAS NICHT KLAPPT
+------------------------------------------------------------------
+Problem: Windows blockiert Rhythmus.exe ("Windows hat den PC geschützt")
+  -> "Weitere Informationen" -> "Trotzdem ausführen". Das passiert,
+     weil das Programm keine kostenpflichtige Firmen-Signatur hat.
+  -> Meldet ein Virenscanner die Datei, liegt das meist am selben
+     Grund. Dann kannst du die Variante mit Python (3b) nutzen.
+
+Problem: Rhythmus.exe meldet "Port 5173 ist belegt"
+  -> Der Python-Server aus Schritt 3b läuft noch. Dessen schwarzes
+     Fenster schließen, Rhythmus erneut starten.
+
+Problem: In der Taskleiste erscheint das Edge-Logo statt Rhythmus
+  -> Rhythmus-Fenster schließen, Rhythmus neu starten.
+  -> Hilft das nicht: die Datei %APPDATA%\Rhythmus\log.txt
+     schicken (Windows-Taste + R, %APPDATA%\Rhythmus eingeben,
+     Enter). Darin steht, was beim Setzen des Logos passiert ist.
+
+Problem: Rhythmus.exe öffnet sich im normalen Browser statt in
+         einem eigenen Fenster
+  -> Microsoft Edge wurde nicht gefunden. Funktioniert trotzdem.
+
+Problem: "Weiter" ist grau
+  -> Die Client ID stimmt nicht: genau 32 Zeichen, nur 0–9 und a–f.
+     Nicht das Client Secret erwischt?
+
+Problem: Bei Spotify erscheint "INVALID_CLIENT: Invalid redirect URI"
+  -> Die Adresse im Dashboard stimmt nicht genau mit der Adresse
+     im Browser überein (Schrägstrich am Ende? 127.0.0.1 statt
+     localhost? Nach dem Eintippen "Add" UND "Save" geklickt?)
+
+Problem: Seite bleibt leer / schwarz
+  -> Strg + Umschalt + R drücken.
+  -> Server im Ordner "dist" gestartet? (Schritt 3)
+
+Problem: "Die Website ist nicht erreichbar"
+  -> Das schwarze Fenster ist zu oder zeigt einen Fehler.
+     Schritt 3 wiederholen.
+
+Problem: Link 127.0.0.1:5173 am Handy geht nicht
+  -> Normal. 127.0.0.1 heißt "dieses Gerät". Fürs Handy Schritt 4.
+
+Problem: "Kein Spotify-Gerät gefunden"
+  -> Spotify-App (Handy) oder Spotify-Programm (PC) öffnen,
+     kurz einen Titel abspielen, dann in der Rhythmus-App ⟳ tippen.
+  -> Am PC alternativ https://open.spotify.com in einem anderen Tab
+     öffnen und dort kurz etwas abspielen.
+  -> Solange kein Gerät da ist, spielt die App nur 30-Sekunden-
+     Vorschauen.
+
+Problem: "Dieser Browser" taucht am PC nicht als Gerät auf
+  -> Chrome, Edge oder Firefox verwenden.
+  -> Im Spotify-Dashboard "Web Playback SDK" angekreuzt?
+  -> Ausweichen auf das Spotify-Programm am PC oder open.spotify.com
+     (erscheinen dann als eigenes Gerät).
+
+Problem: Am Handy läuft kein Ton / gelber Hinweis "Spotify auf dem
+         Handy startet nicht"
+  -> Die Spotify-App schläft im Hintergrund. Im Hinweis auf
+     "Spotify öffnen" tippen (oder die Spotify-App selbst öffnen),
+     zurück zur Rhythmus-App wechseln, "Nochmal" tippen.
+     Solange Musik läuft, wechseln die Titel danach automatisch.
+
+Problem: Hinweis "Spotify spielt gerade: ..."
+  -> Spotify spielt etwas anderes als den angezeigten Vorschlag
+     (z. B. nach dem Ende der Vorschlagsliste). Auf "Diesen
+     Vorschlag spielen" tippen.
+
+Problem: "Spotify hat den Befehl gerade abgelehnt"
+  -> Spotify lehnt Befehle ab, die zum Zustand nicht passen (z. B.
+     Weiterspielen, obwohl schon läuft). Die App versucht es selbst
+     erneut. Bleibt die Meldung: einfach nochmal tippen.
+
+Problem: "Das Gerät ist nicht mehr erreichbar"
+  -> Spotify auf dem Gerät schläft. Kurz öffnen, ⟳ tippen.
+
+Problem: Keine oder kaum Vorschläge
+  -> Kurz warten und "Neuen Vorschlag holen" tippen. Der
+     Rhythmus-Dienst (ReccoBeats) kennt nicht jeden Titel und
+     begrenzt zu viele Anfragen kurzzeitig.
+
+Problem: Fehler bleibt
+  -> Am PC F12 drücken -> Reiter "Konsole" -> Screenshot der roten
+     Meldungen schicken, dazu ein Screenshot vom schwarzen Fenster.
+
+
+------------------------------------------------------------------
+9. GUT ZU WISSEN
+------------------------------------------------------------------
+  - Spotify erlaubt eigenen Apps im "Development Mode" höchstens
+    5 Nutzer. Für dich allein reicht das.
+  - Die Rhythmusdaten kommen vom kostenlosen Dienst ReccoBeats,
+    weil Spotify diese Daten seit Ende 2024 nicht mehr an neue Apps
+    herausgibt. Titel, die ReccoBeats nicht kennt, werden angezeigt,
+    fließen aber nicht ins Lernen ein.
+  - Spotify hat keine Liste "aller Titel". Die App zieht deshalb
+    zufällige Stichproben aus dem ganzen Katalog (zufällige
+    Buchstaben, Jahrgänge 1950 bis heute, zufällige Positionen)
+    und ergänzt sie um Empfehlungen ausgehend von deinen
+    Lieblingssongs. Sortiert wird nur nach Rhythmus.
+  - Wie die App bewertet:
+      * Tempo und Tanzbarkeit zählen am meisten, dann Energie,
+        dann Klang (akustisch, Gesang) und Stimmung.
+      * Halbes oder doppeltes Tempo gilt als fast gleich
+        (90 BPM Hip-Hop ~ 180 BPM Drum and Bass).
+      * Verglichen wird mit den 3 ähnlichsten Lieblingssongs,
+        nicht mit einem Durchschnitt – so bleiben ganz
+        verschiedene Rhythmen, die du magst, erhalten.
+      * Ein Nein zählt nach 14 Tagen nur noch halb.
+      * Etwa jeder 7. Vorschlag ist bewusst ein Ausreißer.
+  - Gespeichert wird bei Spotify (Lieblingssongs, Playlist
+    "Rhythmus-Abgelehnt"). Im Browser liegen nur die Client ID,
+    die Anmeldung und ein Zwischenspeicher der Rhythmusdaten.
+    Die Windows-Version sichert diese zusätzlich in
+    %APPDATA%\Rhythmus\daten.json.
+  - Abmelden: oben rechts "Abmelden".
