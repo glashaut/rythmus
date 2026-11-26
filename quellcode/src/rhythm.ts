@@ -100,7 +100,7 @@ export function mayResuggest(rejectedAt: number, now: number): boolean {
   return decay(rejectedAt, now) <= 0.5;
 }
 
-export type Pick = { item: Scored; reason: 'match' | 'explore' | 'later' };
+export type Pick = { item: Scored; reason: 'match' | 'explore' | 'later' | 'artist'; artist?: string };
 
 /**
  * Nächsten Vorschlag wählen. Meist der beste Treffer (mit etwas Zufall unter den besten 5),
@@ -141,4 +141,15 @@ export function addLater(list: LaterEntry[], id: string, now: number, counter: n
 /** Erster fälliger Eintrag (nach Anzahl Vorschlägen oder Zeit). */
 export function dueLater(list: LaterEntry[], now: number, counter: number): LaterEntry | null {
   return list.find((e) => counter >= e.dueCount || now >= e.dueAt) ?? null;
+}
+
+// ---------- Künstler-Spezial ----------
+
+/** Jeder wievielte Vorschlag aus der Künstler-Auswahl kommt (2 = jeder zweite). */
+export const ARTIST_EVERY = 2;
+export const ARTIST_COUNT = 20;
+
+/** Kommt an Position pos (1, 2, 3 …) ein Künstler-Titel dran? */
+export function artistTurn(pos: number, queued: number): boolean {
+  return queued > 0 && pos % ARTIST_EVERY === 0;
 }

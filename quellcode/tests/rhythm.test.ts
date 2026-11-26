@@ -81,3 +81,13 @@ import { addLater, dueLater, LATER } from '../src/rhythm';
   assert.equal(list.length, 0, 'nach dem 3. Mal ohne Bewertung Schluss');
   console.log('✓ Später-Liste: fällig nach Anzahl/Zeit, höchstens 3 Mal');
 }
+
+// ---------- Künstler-Spezial ----------
+import { artistTurn, ARTIST_EVERY } from '../src/rhythm';
+{
+  const turns = [1, 2, 3, 4, 5, 6].map((p) => artistTurn(p, 5));
+  assert.deepEqual(turns, [false, true, false, true, false, true], 'jeder 2. Vorschlag');
+  assert.equal(artistTurn(2, 0), false, 'ohne offene Titel nie');
+  assert.equal(ARTIST_EVERY, 2);
+  console.log('✓ Künstler-Spezial: jeder 2. Vorschlag, nur solange Titel offen sind');
+}

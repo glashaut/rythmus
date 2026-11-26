@@ -28,7 +28,7 @@ export interface SpotifyTrack {
   name: string;
   uri: string;
   duration_ms?: number;
-  artists: { name: string }[];
+  artists: { name: string; id?: string }[];
   album?: { name: string; images?: SpotifyImage[] };
 }
 export interface PlaylistEntry { track: SpotifyTrack; addedAt: number }

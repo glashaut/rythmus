@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	version = "0.10.0"
+	version = "0.11.0"
 	addr    = "127.0.0.1:5173"
 	appURL  = "http://127.0.0.1:5173/"
 	// Ohne Lebenszeichen der App beendet sich der Starter nach dieser Zeit

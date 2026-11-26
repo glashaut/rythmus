@@ -1,5 +1,5 @@
 // Minimaler Service Worker: App-Hülle zwischenspeichern, Daten immer frisch aus dem Netz.
-const CACHE = 'rhythmus-v11';
+const CACHE = 'rhythmus-v12';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
