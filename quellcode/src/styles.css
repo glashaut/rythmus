@@ -154,3 +154,15 @@ h1 { font-size: 1.15rem; }
 a.link { margin: 4px 0 0; }
 .actions { margin-top: 10px; gap: 8px; }
 .actions button { padding: 12px 8px; font-size: 1rem; }
+
+/* Künstler markieren (v0.11) */
+.artist-row { height: 30px; display: flex; gap: 6px; align-items: center; margin-top: 6px; overflow: hidden; flex-wrap: nowrap; }
+.chip { flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 4px 10px; font-size: .8rem; border-radius: 999px; background: transparent;
+  border: 1px solid var(--line); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip.on { color: #f2c94c; border-color: #6b5a1f; background: #221d0d; }
+.badge.artist { color: #f2c94c; }
+.badge.artist b { color: #f2c94c; }
+.artist-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; }
+.artist-list .muted.small { width: 100%; }
+.artist-list .chip { display: inline-flex; gap: 4px; align-items: center; overflow: visible; }
+.chip .x { background: none; padding: 0 0 0 4px; color: var(--muted); font-size: 1rem; line-height: 1; }

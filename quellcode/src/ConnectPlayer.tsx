@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import * as cn from './connect';
 import type { Device, PlayerState } from './connect';
 import { formatTime } from './embed';
@@ -9,7 +9,7 @@ import Player from './Player';
  * Am PC wird dieser Browser selbst zum Abspielgerät, am Handy wird die Spotify-App ferngesteuert.
  * Ohne erreichbares Gerät: 30-Sekunden-Vorschau als Notlösung.
  */
-export default function ConnectPlayer({ trackId, autoplay, durationMs, title, artists, image, getUpcoming, onExternalTrack, onEnded, favorite, onToggleFavorite }: {
+export default function ConnectPlayer({ trackId, autoplay, durationMs, title, artists, image, getUpcoming, onExternalTrack, onEnded, favorite, onToggleFavorite, below }: {
   trackId: string; autoplay: boolean; durationMs?: number; title?: string; artists?: string; image?: string;
   /** IDs der nächsten Vorschläge – gehen als Liste an Spotify, damit ⏭ (auch im Sperrbildschirm) weiterführt */
   getUpcoming?: () => string[];
@@ -20,6 +20,8 @@ export default function ConnectPlayer({ trackId, autoplay, durationMs, title, ar
   /** Als Lieblingssong gespeichert? ♥-Knopf speichert, ohne den Titel zu wechseln */
   favorite?: boolean;
   onToggleFavorite?: () => void;
+  /** Zeile unter dem Titel (Künstler markieren) */
+  below?: ReactNode;
 }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [device, setDevice] = useState<Device | null>(null);
@@ -292,6 +294,7 @@ export default function ConnectPlayer({ trackId, autoplay, durationMs, title, ar
               >{favorite ? '♥' : '♡'}</button>
             )}
           </div>
+          {below}
           <div className="progress">
             <span>{formatTime(shown)}</span>
             <input

@@ -159,6 +159,8 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [hearted, setHearted] = useState('');
+  const [note, setNote] = useState('');
+  const [artistBusy, setArtistBusy] = useState('');
   const started = useRef(false);
 
   const load = useCallback(async (play: boolean) => {
@@ -207,6 +209,7 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
 
   const rate = (yes: boolean) => {
     if (!current || loading) return;
+    setNote('');
     unlockBrowserAudio();
     // Lernstand sofort anpassen, Speichern läuft im Hintergrund, nächster Titel startet direkt
     engine.rate(current, yes).catch((e: Error) => setMsg(`Speichern fehlgeschlagen: ${e.message}`));
@@ -224,7 +227,44 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
     p.then(onChange).catch((e: Error) => setMsg(`Speichern fehlgeschlagen: ${e.message}`));
   };
   // Eine Zeile mit fester Höhe für Hinweise – wichtigste Meldung zuerst
+  const toggleArtist = async (name: string) => {
+    if (artistBusy) return;
+    if (engine.isArtistLiked(name)) {
+      engine.unlikeArtist(name);
+      setNote(`☆ ${name} nicht mehr markiert – offene Titel entfernt.`);
+      onChange();
+      return;
+    }
+    setArtistBusy(name);
+    setNote(`Suche Titel von und mit ${name} …`);
+    try {
+      const n = await engine.likeArtist(name);
+      setNote(n ? `★ ${name}: ${n} Titel von und mit ${name} kommen jetzt in den Fluss (jeder 2. Vorschlag).`
+        : `★ ${name} markiert – aber gerade keine neuen Titel gefunden.`);
+    } catch (e) {
+      setNote('');
+      setMsg(`Künstler-Suche fehlgeschlagen: ${(e as Error).message}`);
+    } finally {
+      setArtistBusy('');
+      onChange();
+    }
+  };
+  const artistRow = current ? (
+    <div className="artist-row">
+      {(current.artistList?.length ? current.artistList : current.artists ? [current.artists] : []).slice(0, 3).map((a) => {
+        const on = engine.isArtistLiked(a);
+        return (
+          <button key={a} className={`chip ${on ? 'on' : ''}`} disabled={artistBusy === a}
+            title={on ? 'Markierung aufheben' : '20 Titel von/mit diesem Künstler einmischen'}
+            onClick={() => void toggleArtist(a)}>
+            {artistBusy === a ? '…' : on ? '★' : '☆'} {a}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
   const topNotice = msg ? <span className="error">{msg}</span>
+    : note ? <>{note}</>
     : hearted ? <>♥ {hearted} in Spotify gespeichert – zählt als „Ja“.</>
     : engine.progress.phase && engine.progress.total > 0 ? <>{engine.progress.phase}: {engine.progress.done} / {engine.progress.total} – Vorschläge werden laufend genauer.</>
     : noFavs ? <>Noch keine Favoriten – erst mal reiner Zufall. <button className="link inline" onClick={goSearch}>Lieblingstitel suchen</button></>
@@ -236,7 +276,8 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
       {current && (
         <div className={`card ${loading ? 'dim' : ''}`}>
           <div className={`badge ${current.reason}`}>
-            {current.reason === 'later' ? `🔁 Nochmal zur Auswahl – noch nicht bewertet${current.offers && current.offers > 1 ? ` (${current.offers}. Mal)` : ''}`
+            {current.reason === 'artist' && current.special ? <>⭐ Künstler-Spezial: <b>{current.special.artist}</b> ({current.special.n}/{current.special.total})</>
+              : current.reason === 'later' ? `🔁 Nochmal zur Auswahl – noch nicht bewertet${current.offers && current.offers > 1 ? ` (${current.offers}. Mal)` : ''}`
               : current.reason === 'explore' ? '🎲 Ausreißer – mal was anderes'
               : current.nearest ? <>Ähnlicher Rhythmus wie <b>{current.nearest}</b></> : '🎲 Zufallsfund'}
           </div>
@@ -246,6 +287,7 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
             getUpcoming={() => engine.upcomingIds(25)} onExternalTrack={(id) => void onExternalTrack(id)}
             onEnded={() => { engine.markUnrated(current.id); void load(true); }}
             favorite={favorite} onToggleFavorite={toggleFavorite}
+            below={artistRow}
           />
           <FeatureBars f={current.features} />
           <a className="link small" href={`https://open.spotify.com/track/${current.id}`} target="_blank" rel="noreferrer">In Spotify öffnen ↗</a>
@@ -262,6 +304,7 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
 }
 
 function FeatureBars({ f }: { f: Features }) {
+  if (!f.tempo) return <div className="features"><div className="bpm muted">Keine Rhythmusdaten für diesen Titel</div></div>;
   const bar = (label: string, v: number) => (
     <div className="bar" key={label}>
       <span>{label}</span>
@@ -289,6 +332,17 @@ function Favorites({ engine, onChange, version }: { engine: Engine; onChange: ()
   const analyzed = items.filter(({ info }) => engine.features.has(info.id)).length;
   return (
     <section>
+      {engine.artists.length > 0 && (
+        <div className="artist-list">
+          <div className="muted small">Markierte Künstler (ihre Titel werden in den Fluss gemischt):</div>
+          {engine.artists.map((a) => (
+            <span key={a.name} className="chip on">
+              ★ {a.name} <span className="muted">· {engine.artistPending(a.name)} offen</span>
+              <button className="x" aria-label={`${a.name} nicht mehr markieren`} onClick={() => { engine.unlikeArtist(a.name); onChange(); }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
       <p className="muted small">
         Deine Spotify-Lieblingssongs. Alle fließen ins Lernen ein, „Ja“ landet automatisch hier.
         {' '}Rhythmusdaten vorhanden für {analyzed} von {items.length}.

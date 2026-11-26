@@ -4,7 +4,7 @@
 import * as sp from './spotify';
 import type { SpotifyTrack } from './spotify';
 import { getFeatures, getRecommendations } from './reccobeats';
-import { addLater, dueLater, mayResuggest, pickNext, score, type Features, type LaterEntry, type Pick, type Rated, type Scored } from './rhythm';
+import { addLater, ARTIST_COUNT, artistTurn, dueLater, mayResuggest, pickNext, score, type Features, type LaterEntry, type Pick, type Rated, type Scored } from './rhythm';
 
 export const FAV_NAME = 'Rhythmus-Favoriten'; // ältere Version, wird einmalig in die Lieblingssongs übernommen
 export const REJ_NAME = 'Rhythmus-Abgelehnt';
@@ -25,14 +25,19 @@ export function randomCatalogQuery(rand: () => number = Math.random): { q: strin
   return { q: ch(), maxOffset: 990 };
 }
 
-export interface TrackInfo { id: string; uri: string; title: string; artists: string; image?: string; durationMs?: number }
-export interface Suggestion extends TrackInfo { features: Features; reason: 'match' | 'explore' | 'later'; nearest?: string; score: number; offers?: number }
+export interface TrackInfo { id: string; uri: string; title: string; artists: string; artistList?: string[]; image?: string; durationMs?: number }
+export interface Suggestion extends TrackInfo {
+  features: Features; reason: 'match' | 'explore' | 'later' | 'artist'; nearest?: string; score: number; offers?: number;
+  /** Künstler-Spezial: von welchem Künstler, der wievielte von wie vielen */
+  special?: { artist: string; n: number; total: number };
+}
 
 const infoFromTrack = (t: SpotifyTrack): TrackInfo => ({
   id: t.id,
   uri: t.uri,
   title: t.name,
   artists: t.artists.map((a) => a.name).join(', '),
+  artistList: t.artists.map((a) => a.name),
   image: (t.album?.images ?? []).slice().sort((a, b) => (a.width ?? 0) - (b.width ?? 0)).find((i) => (i.width ?? 300) >= 200)?.url ?? t.album?.images?.[0]?.url,
   durationMs: t.duration_ms,
 });
@@ -45,6 +50,18 @@ const pickRandom = <T,>(arr: T[], n: number): T[] => {
   }
   return copy.slice(0, n);
 };
+
+const K_ARTISTS = 'rz.artists';
+const K_ARTIST_QUEUE = 'rz.artistQueue';
+interface ArtistEntry { name: string; addedAt: number; total: number; served: number }
+interface ArtistQueued { id: string; artist: string }
+function loadJson<T>(key: string, fallback: T): T {
+  try { const v = JSON.parse(localStorage.getItem(key) ?? 'null') as T | null; return v ?? fallback; } catch { return fallback; }
+}
+function saveJson(key: string, v: unknown): void {
+  try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* voll */ }
+}
+const norm = (s: string) => s.trim().toLowerCase();
 
 const K_LATER = 'rz.later';
 function loadLater(): LaterEntry[] {
@@ -70,6 +87,10 @@ export class Engine {
   private later: LaterEntry[] = loadLater();
   private offers = new Map<string, number>();
   private counter = 0;
+  /** Künstler, die du markiert hast, und die noch offenen Titel von/mit ihnen. */
+  artists: ArtistEntry[] = loadJson<ArtistEntry[]>(K_ARTISTS, []);
+  private artistQueue: ArtistQueued[] = loadJson<ArtistQueued[]>(K_ARTIST_QUEUE, []);
+  private flowPos = 0;
 
   /** Fortschritt beim Laden/Analysieren, für die Anzeige. */
   progress = { phase: '', done: 0, total: 0 };
@@ -182,7 +203,7 @@ export class Engine {
       tasks.push(getRecommendations(pickRandom(likeIds, 5), 40).then((recs) => {
         for (const r of recs) {
           if (!this.info.has(r.spotifyId)) {
-            this.info.set(r.spotifyId, { id: r.spotifyId, uri: `spotify:track:${r.spotifyId}`, title: r.title, artists: r.artists, durationMs: r.durationMs });
+            this.info.set(r.spotifyId, { id: r.spotifyId, uri: `spotify:track:${r.spotifyId}`, title: r.title, artists: r.artists, artistList: r.artists ? r.artists.split(', ') : [], durationMs: r.durationMs });
           }
           candidates.add(r.spotifyId);
         }
@@ -216,17 +237,114 @@ export class Engine {
     const likes = this.rated(this.likes);
     const dislikes = this.rated(this.dislikes);
     // Vorausgewählte zurück in den Vorrat, damit neue Bewertungen sofort wirken
+    const backToArtist: ArtistQueued[] = [];
     for (const u of this.upcoming) {
-      if (u.reason === 'later') {
+      if (u.reason === 'artist') {
+        backToArtist.push({ id: u.item.features.spotifyId, artist: u.artist ?? '' });
+      } else if (u.reason === 'later') {
         const id = u.item.features.spotifyId;
         this.later = [{ id, dueAt: 0, dueCount: 0, offers: this.offers.get(id) ?? 1 }, ...this.later.filter((e) => e.id !== id)];
       } else this.pool.push(u.item);
     }
+    this.artistQueue.unshift(...backToArtist);
     this.saveLater();
+    this.saveArtists();
     this.upcoming = [];
     this.pool = this.pool
       .filter((p) => this.allowed(p.features.spotifyId, now))
       .map((p) => score(p.features, likes, dislikes, now));
+  }
+
+  private saveArtists(): void {
+    saveJson(K_ARTISTS, this.artists);
+    saveJson(K_ARTIST_QUEUE, this.artistQueue);
+  }
+
+  isArtistLiked(name: string): boolean {
+    return this.artists.some((a) => norm(a.name) === norm(name));
+  }
+
+  /** Noch offene Künstler-Spezial-Titel je Künstler. */
+  artistPending(name: string): number {
+    const n = norm(name);
+    return this.artistQueue.filter((q) => norm(q.artist) === n).length
+      + this.upcoming.filter((u) => u.reason === 'artist' && norm(u.artist ?? '') === n).length;
+  }
+
+  /**
+   * Künstler markieren: bis zu 20 zufällige Titel von oder mit ihm suchen und in den Fluss einreihen.
+   * Gibt die Anzahl gefundener Titel zurück.
+   */
+  async likeArtist(name: string): Promise<number> {
+    if (this.isArtistLiked(name)) return this.artistPending(name);
+    const now = Date.now();
+    // Suche nach dem Künstlernamen findet auch Titel, bei denen er nur mitwirkt (feat.)
+    // Bis zu 100 Treffer einsammeln (Seiten à 10), danach zufällig 20 auswählen
+    const found = new Map<string, TrackInfo>();
+    const want = norm(name);
+    for (let off = 0; off < 100; off += 10) {
+      let tracks: SpotifyTrack[] = [];
+      try { tracks = await sp.searchTracks(`artist:"${name}"`, off); } catch { break; }
+      for (const t of tracks) {
+        if (!t.artists.some((a) => norm(a.name) === want)) continue; // nur echte Treffer (von oder mit)
+        const id = t.id;
+        if (this.likes.has(id) || this.seen.has(id) || found.has(id)) continue;
+        const d = this.dislikes.get(id);
+        if (d && !mayResuggest(d.at, now)) continue;
+        const info = infoFromTrack(t);
+        this.info.set(id, info);
+        found.set(id, info);
+      }
+      if (tracks.length < 10) break; // letzte Seite erreicht
+    }
+    const ids = pickRandom([...found.keys()], found.size);
+    await this.loadFeatures(ids);
+    const chosen = ids.filter((id) => this.features.has(id)).slice(0, ARTIST_COUNT);
+    // Fehlen Rhythmusdaten, notfalls trotzdem nehmen (Anzeige ohne Balken)
+    if (chosen.length < ARTIST_COUNT) {
+      for (const id of ids) {
+        if (chosen.length >= ARTIST_COUNT) break;
+        if (!chosen.includes(id)) chosen.push(id);
+      }
+    }
+    this.artists.push({ name, addedAt: now, total: chosen.length, served: 0 });
+    this.artistQueue.push(...chosen.map((id) => ({ id, artist: name })));
+    // Neu eingereiht → Vorauswahl neu mischen, damit die Titel bald kommen
+    this.rescore();
+    return chosen.length;
+  }
+
+  /** Markierung aufheben: noch offene Titel dieses Künstlers verschwinden wieder. */
+  unlikeArtist(name: string): void {
+    const n = norm(name);
+    this.artists = this.artists.filter((a) => norm(a.name) !== n);
+    this.upcoming = this.upcoming.filter((u) => !(u.reason === 'artist' && norm(u.artist ?? '') === n));
+    this.artistQueue = this.artistQueue.filter((q) => norm(q.artist) !== n);
+    this.saveArtists();
+  }
+
+  private artistPick(): Pick | null {
+    while (this.artistQueue.length) {
+      const q = this.artistQueue.shift()!;
+      if (this.likes.has(q.id)) continue;
+      const f: Features = this.features.get(q.id) ?? {
+        spotifyId: q.id, tempo: 0, danceability: 0, energy: 0, valence: 0, acousticness: 0, instrumentalness: 0, speechiness: 0, loudness: 0,
+      };
+      const sc = score(f, this.rated(this.likes), this.rated(this.dislikes), Date.now());
+      this.saveArtists();
+      return { item: sc, reason: 'artist', artist: q.artist };
+    }
+    return null;
+  }
+
+  /** Nächster Titel im Fluss: abwechselnd normal und (falls markiert) Künstler-Spezial. */
+  private takeFlowPick(): Pick | null {
+    this.flowPos++;
+    if (artistTurn(this.flowPos, this.artistQueue.length)) {
+      const a = this.artistPick();
+      if (a) return a;
+    }
+    return this.takePick() ?? this.artistPick();
   }
 
   private takePick(): Pick | null {
@@ -251,6 +369,14 @@ export class Engine {
 
   laterCount(): number { return this.later.length; }
 
+  private servedArtist(name: string): { artist: string; n: number; total: number } {
+    const e = this.artists.find((a) => norm(a.name) === norm(name));
+    if (!e) return { artist: name, n: 1, total: 1 };
+    e.served = Math.min(e.total, e.served + 1);
+    this.saveArtists();
+    return { artist: e.name, n: e.served, total: e.total };
+  }
+
   /** Fälligen "Später"-Titel als Vorschlag holen (oder null). */
   private async laterPick(): Promise<Pick | null> {
     const now = Date.now();
@@ -273,7 +399,7 @@ export class Engine {
   /** IDs der nächsten n Vorschläge (ohne sie schon als gesehen zu markieren). */
   upcomingIds(n = 15): string[] {
     while (this.upcoming.length < n) {
-      const p = this.takePick();
+      const p = this.takeFlowPick();
       if (!p) break;
       this.upcoming.push(p);
     }
@@ -306,6 +432,7 @@ export class Engine {
       nearest: pick.item.nearest?.label,
       score: pick.item.score,
       offers: pick.reason === 'later' ? this.offers.get(id) : undefined,
+      special: pick.reason === 'artist' ? this.servedArtist(pick.artist ?? '') : undefined,
     };
   }
 
@@ -349,15 +476,15 @@ export class Engine {
 
   async next(): Promise<Suggestion | null> {
     // Nur warten, wenn der Vorrat fast leer ist – sonst kommt der nächste Titel sofort
-    for (let tries = 0; this.pool.length + this.upcoming.length < 3 && tries < 3; tries++) await this.refill();
+    for (let tries = 0; this.pool.length + this.upcoming.length + this.artistQueue.length < 3 && tries < 3; tries++) await this.refill();
     const now = Date.now();
     let pick: Pick | null = await this.laterPick();
     while (this.upcoming.length && !pick) {
       const u = this.upcoming.shift()!;
       const uid = u.item.features.spotifyId;
-      if (u.reason === 'later' ? !this.likes.has(uid) && !this.dislikes.has(uid) : this.allowed(uid, now)) pick = u;
+      if (u.reason === 'later' || u.reason === 'artist' ? !this.likes.has(uid) && !this.dislikes.has(uid) : this.allowed(uid, now)) pick = u;
     }
-    pick ??= this.takePick();
+    pick ??= this.takeFlowPick();
     if (!pick) return null;
     // Vorrat im Hintergrund auffüllen, während du hörst
     if (this.pool.length < 12) void this.refill().catch(() => undefined);

@@ -1,5 +1,5 @@
 ==================================================================
-  RHYTHMUS-APP  –  Komplette Anleitung (Version 0.10)
+  RHYTHMUS-APP  –  Komplette Anleitung (Version 0.11)
 ==================================================================
 
 Die App schlägt dir Titel aus dem ganzen Spotify-Katalog vor –
@@ -260,6 +260,14 @@ Reiter "Entdecken"
   - ♡ neben dem Titel: als Lieblingssong speichern, das Lied spielt
     dabei einfach weiter (♥ = gespeichert, nochmal tippen = entfernen).
     "Ja" speichert ebenfalls, springt aber sofort zum nächsten Titel.
+  - ☆ Künstlername (unter dem Titel): Künstler markieren. Die App
+    holt dann 20 zufällige Titel VON oder MIT diesem Künstler und
+    mischt sie in den normalen Fluss – jeder 2. Vorschlag kommt
+    daraus, erkennbar an "⭐ Künstler-Spezial: Name (3/20)".
+    Lieblingssongs und abgelehnte Titel werden ausgelassen.
+    Nochmal tippen (★ -> ☆) hebt die Markierung auf, offene Titel
+    verschwinden wieder. Die Liste markierter Künstler steht im
+    Reiter "Favoriten".
   - Ja / Nein: speichert die Bewertung und startet sofort den
     nächsten Titel.
   - Später: nächster Titel ohne Bewertung.
