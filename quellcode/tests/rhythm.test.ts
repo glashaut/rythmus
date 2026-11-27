@@ -37,11 +37,12 @@ test('mehrere verschiedene Vorlieben bleiben eigene Inseln (kein Durchschnitt)',
   assert.equal(nearDnb.nearest?.id, 'a');
 });
 
-test('Ablehnung verblasst: Halbwertszeit 14 Tage', () => {
+test('Ablehnung verblasst (Halbwertszeit 14 Tage), Titel selbst ruht ca. 3 Monate', () => {
   assert.equal(decay(now, now), 1);
   assert.ok(Math.abs(decay(now - 14 * DAY, now) - 0.5) < 1e-9);
   assert.equal(mayResuggest(now - 3 * DAY, now), false);
-  assert.equal(mayResuggest(now - 15 * DAY, now), true);
+  assert.equal(mayResuggest(now - 60 * DAY, now), false, 'nach 2 Monaten noch Pause');
+  assert.equal(mayResuggest(now - 91 * DAY, now), true, 'nach ca. 3 Monaten neue Chance');
 });
 
 test('frische Ablehnung drückt ähnliche Titel stärker als alte', () => {
@@ -90,4 +91,15 @@ import { artistTurn, ARTIST_EVERY } from '../src/rhythm';
   assert.equal(artistTurn(2, 0), false, 'ohne offene Titel nie');
   assert.equal(ARTIST_EVERY, 2);
   console.log('✓ Künstler-Spezial: jeder 2. Vorschlag, nur solange Titel offen sind');
+}
+
+// ---------- Wiedervorlage ----------
+import { revisitTurn, REVISIT, monthsAgo } from '../src/rhythm';
+{
+  const turns = Array.from({ length: 16 }, (_, i) => revisitTurn(i + 1, 3));
+  assert.equal(turns.filter(Boolean).length, 2, 'jeder 8. Vorschlag');
+  assert.equal(revisitTurn(8, 0), false, 'ohne fällige Titel nie');
+  assert.equal(REVISIT.afterDays, 90);
+  assert.equal(monthsAgo(Date.UTC(2026, 7, 27), Date.UTC(2026, 10, 27)), 3);
+  console.log('✓ Wiedervorlage: nach ca. 3 Monaten, höchstens jeder 8. Vorschlag');
 }

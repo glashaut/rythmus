@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import * as cn from './connect';
 import type { Device, PlayerState } from './connect';
 import { formatTime } from './embed';
@@ -9,12 +9,12 @@ import Player from './Player';
  * Am PC wird dieser Browser selbst zum Abspielgerät, am Handy wird die Spotify-App ferngesteuert.
  * Ohne erreichbares Gerät: 30-Sekunden-Vorschau als Notlösung.
  */
-export default function ConnectPlayer({ trackId, autoplay, durationMs, title, artists, image, getUpcoming, onExternalTrack, onEnded, favorite, onToggleFavorite, below }: {
+export default function ConnectPlayer({ trackId, autoplay, durationMs, title, artists, image, getUpcoming, onExternalTrack, onEnded, favorite, onToggleFavorite, below, positionRef, startAtMs }: {
   trackId: string; autoplay: boolean; durationMs?: number; title?: string; artists?: string; image?: string;
   /** IDs der nächsten Vorschläge – gehen als Liste an Spotify, damit ⏭ (auch im Sperrbildschirm) weiterführt */
   getUpcoming?: () => string[];
   /** Spotify spielt von selbst einen der nächsten Vorschläge (⏭ gedrückt oder Titel zu Ende) */
-  onExternalTrack?: (id: string) => void;
+  onExternalTrack?: (id: string, endedNaturally: boolean) => void;
   /** Titel ist zu Ende gelaufen und Spotify spielt nicht von selbst den nächsten Vorschlag */
   onEnded?: () => void;
   /** Als Lieblingssong gespeichert? ♥-Knopf speichert, ohne den Titel zu wechseln */
@@ -22,6 +22,10 @@ export default function ConnectPlayer({ trackId, autoplay, durationMs, title, ar
   onToggleFavorite?: () => void;
   /** Zeile unter dem Titel (Künstler markieren) */
   below?: ReactNode;
+  /** Aktuelle Position (für "Zurück"), wird laufend aktualisiert */
+  positionRef?: MutableRefObject<number>;
+  /** Beim automatischen Start an dieser Stelle beginnen (z. B. nach "Zurück") */
+  startAtMs?: number;
 }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [device, setDevice] = useState<Device | null>(null);
@@ -120,7 +124,9 @@ export default function ConnectPlayer({ trackId, autoplay, durationMs, title, ar
       // Spotify ist in unserer Liste weitergesprungen (⏭ oder Titelende) → App folgt
       if (idx > 0 && idx > wantIdx && (!startedAt.current || sinceStart > 3000)) {
         externalTo.current = st.trackId;
-        onExternalRef.current?.(st.trackId);
+        // War der vorige Titel fast zu Ende? Dann lief er aus (unbewertet), sonst wurde mit ⏭ übersprungen
+        const endedNaturally = !!prev && prev.trackId === want && prev.durationMs > 0 && prev.positionMs >= prev.durationMs - 10_000;
+        onExternalRef.current?.(st.trackId, endedNaturally);
         return;
       }
       // Nach unserem Start läuft noch/wieder der alte oder ein fremder Titel → Startbefehl einmal wiederholen
@@ -224,7 +230,7 @@ export default function ConnectPlayer({ trackId, autoplay, durationMs, title, ar
       setStalled(false);
       return;
     }
-    if (autoplay) start(0);
+    if (autoplay) start(startAtMs ?? 0);
   }, [trackId, autoplay, device]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isThis = !!state?.trackId && (state.trackId === trackId || state.trackId === alias.current.get(trackId));
@@ -234,6 +240,7 @@ export default function ConnectPlayer({ trackId, autoplay, durationMs, title, ar
   const advancing = !!state?.isPlaying && moving.current;
   const livePos = isThis && state ? Math.min(dur || Infinity, state.positionMs + (advancing ? Date.now() - state.at : 0)) : 0;
   const shown = dragging ?? livePos;
+  if (positionRef && isThis) positionRef.current = livePos;
   const playing = isThis && !!state?.isPlaying;
 
   const seekTo = (ms: number) => {

@@ -166,3 +166,8 @@ a.link { margin: 4px 0 0; }
 .artist-list .muted.small { width: 100%; }
 .artist-list .chip { display: inline-flex; gap: 4px; align-items: center; overflow: visible; }
 .chip .x { background: none; padding: 0 0 0 4px; color: var(--muted); font-size: 1rem; line-height: 1; }
+
+/* Zurück-Knopf + Wiedervorlage (v0.12) */
+.actions { grid-template-columns: auto 1fr auto 1fr; }
+.actions .undo { background: transparent; border: 1px solid var(--line); font-weight: 400; padding: 12px 12px; font-size: 1.1rem; }
+.badge.revisit { color: #c79bff; }

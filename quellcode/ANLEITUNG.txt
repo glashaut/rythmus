@@ -1,5 +1,5 @@
 ==================================================================
-  RHYTHMUS-APP  –  Komplette Anleitung (Version 0.11)
+  RHYTHMUS-APP  –  Komplette Anleitung (Version 0.12)
 ==================================================================
 
 Die App schlägt dir Titel aus dem ganzen Spotify-Katalog vor –
@@ -7,10 +7,14 @@ quer durch alle Genres, sortiert nur nach Rhythmus (Tempo,
 Tanzbarkeit, Energie). Sie lernt aus deinen Spotify-Lieblingssongs
 und aus deinem Ja/Nein.
 
-  Ja    -> Titel wird in deinen Spotify-Lieblingssongs gespeichert
-  Nein  -> Titel kommt in die private Playlist "Rhythmus-Abgelehnt"
-           (ein Nein verblasst mit der Zeit, der Titel kann nach
-           ca. 2 Wochen wieder auftauchen)
+  Ja     -> Titel wird in deinen Spotify-Lieblingssongs gespeichert
+  Nein   -> Titel kommt in die private Playlist "Rhythmus-Abgelehnt"
+  Später -> Titel kommt in die private Playlist "Rhythmus-Später"
+  Abgelehnte und verschobene Titel ruhen ca. 3 Monate und kommen
+  dann als Wiedervorlage zurück ("🔄 Vor 3 Monaten abgelehnt –
+  neue Chance?"), höchstens jeder 8. Vorschlag. Wieder Nein oder
+  Später = wieder 3 Monate Pause. Geschmack und Stimmung ändern
+  sich eben.
 
 Alles wird bei Spotify gespeichert. Deshalb sind Handy und PC
 immer auf demselben Stand.
@@ -235,7 +239,7 @@ Sperrbildschirm (Android):
   Spotify-Steuerung. Die Rhythmus-App schickt immer die nächsten
   ca. 15 Vorschläge mit, deshalb gilt dort:
     ⏯   Pause / Weiter
-    ⏭   nächster Vorschlag (wie "Später")
+    ⏭   nächster Vorschlag (zählt wie "Später")
     ⏮   Anfang des Titels / vorheriger Vorschlag
     ♥ bzw. +  in deinen Lieblingssongs speichern = zählt als "Ja"
   Ist ein Titel zu Ende, läuft automatisch der nächste Vorschlag.
@@ -270,14 +274,16 @@ Reiter "Entdecken"
     Reiter "Favoriten".
   - Ja / Nein: speichert die Bewertung und startet sofort den
     nächsten Titel.
-  - Später: nächster Titel ohne Bewertung.
+  - Später: Titel ruht ca. 3 Monate (siehe oben), nächster Titel.
+  - ↩ (links): Zurück – macht die letzte Aktion rückgängig (Nein,
+    Später, Ja oder Weiterspringen). Der Titel kommt zurück und spielt
+    an der Stelle weiter, wo du ihn verlassen hast. Bis zu 10 Schritte.
   - Läuft ein Titel zu Ende, ohne dass du Ja oder Nein gedrückt
     hast, startet automatisch der nächste Vorschlag.
-  - Unbewertete Titel (zu Ende gelaufen, "Später", ⏭ im
-    Sperrbildschirm) kommen nach etwa 10 weiteren Vorschlägen oder
-    spätestens nach 30 Minuten wieder – erkennbar am Hinweis
-    "🔁 Nochmal zur Auswahl". Nach dem 3. Mal ohne Bewertung ist
-    Schluss. Das klappt auch nach einem Neustart der App.
+  - Ohne Knopfdruck zu Ende gelaufene Titel kommen nach etwa 10
+    weiteren Vorschlägen oder spätestens nach 30 Minuten wieder –
+    erkennbar am Hinweis "🔁 Nochmal zur Auswahl". Nach dem 3. Mal
+    ohne Bewertung ruhen sie ca. 3 Monate wie bei "Später".
   - Den allerersten Titel startest du selbst mit ▶.
 
 Reiter "Favoriten"

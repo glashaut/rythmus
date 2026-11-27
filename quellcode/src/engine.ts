@@ -4,10 +4,11 @@
 import * as sp from './spotify';
 import type { SpotifyTrack } from './spotify';
 import { getFeatures, getRecommendations } from './reccobeats';
-import { addLater, ARTIST_COUNT, artistTurn, dueLater, mayResuggest, pickNext, score, type Features, type LaterEntry, type Pick, type Rated, type Scored } from './rhythm';
+import { addLater, ARTIST_COUNT, artistTurn, dueLater, laterExhausted, mayResuggest, monthsAgo, pickNext, REVISIT, revisitTurn, score, type Features, type LaterEntry, type Pick, type Rated, type Scored } from './rhythm';
 
 export const FAV_NAME = 'Rhythmus-Favoriten'; // ältere Version, wird einmalig in die Lieblingssongs übernommen
 export const REJ_NAME = 'Rhythmus-Abgelehnt';
+export const POSTPONE_NAME = 'Rhythmus-Später';
 
 /**
  * Zufällige Suchanfrage über den ganzen Spotify-Katalog – ohne Genre.
@@ -25,9 +26,20 @@ export function randomCatalogQuery(rand: () => number = Math.random): { q: strin
   return { q: ch(), maxOffset: 990 };
 }
 
+export type ActionKind = 'yes' | 'no' | 'later' | 'skip';
+interface StateSnap {
+  liked?: { info: TrackInfo; at: number };
+  disliked?: { info: TrackInfo; at: number };
+  postponed?: { info: TrackInfo; at: number };
+  laterEntry?: LaterEntry;
+}
+export interface UndoEntry { s: Suggestion; kind: ActionKind; positionMs: number; prev: StateSnap }
+
 export interface TrackInfo { id: string; uri: string; title: string; artists: string; artistList?: string[]; image?: string; durationMs?: number }
 export interface Suggestion extends TrackInfo {
-  features: Features; reason: 'match' | 'explore' | 'later' | 'artist'; nearest?: string; score: number; offers?: number;
+  features: Features; reason: 'match' | 'explore' | 'later' | 'artist' | 'revisit'; nearest?: string; score: number; offers?: number;
+  /** Wiedervorlage: früher abgelehnt oder verschoben, vor wie vielen Monaten */
+  revisit?: { kind: 'rejected' | 'postponed'; months: number };
   /** Künstler-Spezial: von welchem Künstler, der wievielte von wie vielen */
   special?: { artist: string; n: number; total: number };
 }
@@ -63,6 +75,7 @@ function saveJson(key: string, v: unknown): void {
 }
 const norm = (s: string) => s.trim().toLowerCase();
 
+const K_REVISIT_SHOWN = 'rz.revisitShown';
 const K_LATER = 'rz.later';
 function loadLater(): LaterEntry[] {
   try {
@@ -90,7 +103,21 @@ export class Engine {
   /** Künstler, die du markiert hast, und die noch offenen Titel von/mit ihnen. */
   artists: ArtistEntry[] = loadJson<ArtistEntry[]>(K_ARTISTS, []);
   private artistQueue: ArtistQueued[] = loadJson<ArtistQueued[]>(K_ARTIST_QUEUE, []);
-  private flowPos = 0;
+  /** Mit "Später" verschobene Titel (private Playlist, Datum = wann verschoben) */
+  postponed = new Map<string, { info: TrackInfo; at: number }>();
+  postId = '';
+  private revisitShown: Record<string, number> = loadJson<Record<string, number>>(K_REVISIT_SHOWN, {});
+  /** Spotify-Schreibvorgänge nacheinander ausführen (wichtig für "Zurück") */
+  private net: Promise<void> = Promise.resolve();
+  private enqueue(fn: () => Promise<void>): Promise<void> {
+    const p = this.net.then(fn);
+    this.net = p.catch(() => undefined);
+    return p;
+  }
+  /** Letzte Aktionen für den Zurück-Knopf */
+  private undoStack: UndoEntry[] = [];
+  /** Nach "Zurück": der verdrängte Titel kommt als nächster (überlebt Neubewertungen) */
+  private front: Pick[] = [];
 
   /** Fortschritt beim Laden/Analysieren, für die Anzeige. */
   progress = { phase: '', done: 0, total: 0 };
@@ -103,18 +130,27 @@ export class Engine {
   async init(): Promise<void> {
     const me = await sp.getMe();
     this.meId = me.id;
-    const [rejId, oldFavId] = await Promise.all([
-      sp.findOrCreatePlaylist(REJ_NAME, 'Abgelehnte Vorschläge, verblassen mit der Zeit (Rhythmus-App)', me.id),
+    const [rejId, oldFavId, postId] = await Promise.all([
+      sp.findOrCreatePlaylist(REJ_NAME, 'Abgelehnte Vorschläge, kommen nach ca. 3 Monaten wieder (Rhythmus-App)', me.id),
       sp.findOrCreatePlaylist(FAV_NAME, '', me.id, false),
+      sp.findOrCreatePlaylist(POSTPONE_NAME, 'Mit "Später" verschobene Vorschläge, kommen nach ca. 3 Monaten wieder (Rhythmus-App)', me.id),
     ]);
     this.rejId = rejId;
+    this.postId = postId;
 
     this.setProgress('Lieblingssongs laden', 0, 0);
-    const [saved, rej, oldFav] = await Promise.all([
+    const [saved, rej, oldFav, post] = await Promise.all([
       sp.getSavedTracks((d, t) => this.setProgress('Lieblingssongs laden', d, t)),
       sp.getPlaylistEntries(this.rejId),
       oldFavId ? sp.getPlaylistEntries(oldFavId) : Promise.resolve([]),
+      sp.getPlaylistEntries(this.postId),
     ]);
+    for (const e of post) {
+      const i = infoFromTrack(e.track);
+      this.info.set(i.id, i);
+      const prev = this.postponed.get(i.id);
+      if (!prev || prev.at < e.addedAt) this.postponed.set(i.id, { info: i, at: e.addedAt });
+    }
     for (const e of saved) {
       const i = infoFromTrack(e.track);
       this.info.set(i.id, i);
@@ -138,7 +174,7 @@ export class Engine {
     // Erst Ablehnungen + die 200 neuesten Lieblingssongs analysieren, damit es schnell losgeht;
     // der Rest läuft im Hintergrund weiter (bereits analysierte Titel kommen aus dem Speicher).
     const likeIds = [...this.likes.entries()].sort((a, b) => b[1].at - a[1].at).map(([id]) => id);
-    await this.loadFeatures([...this.dislikes.keys(), ...likeIds.slice(0, 200)]);
+    await this.loadFeatures([...this.dislikes.keys(), ...this.postponed.keys(), ...likeIds.slice(0, 200)]);
     this.analyzing = this.analyzeInBackground(likeIds.slice(200));
     void this.analyzing;
   }
@@ -180,8 +216,9 @@ export class Engine {
 
   private allowed(id: string, now: number): boolean {
     if (this.likes.has(id) || this.seen.has(id)) return false;
-    const d = this.dislikes.get(id);
-    return !d || mayResuggest(d.at, now);
+    // Abgelehnte und verschobene Titel kommen nur über die Wiedervorlage zurück (nach ca. 3 Monaten, dosiert)
+    void now;
+    return !this.dislikes.has(id) && !this.postponed.has(id);
   }
 
   private refilling: Promise<void> | null = null;
@@ -239,7 +276,9 @@ export class Engine {
     // Vorausgewählte zurück in den Vorrat, damit neue Bewertungen sofort wirken
     const backToArtist: ArtistQueued[] = [];
     for (const u of this.upcoming) {
-      if (u.reason === 'artist') {
+      if (u.reason === 'revisit') {
+        delete this.revisitShown[u.item.features.spotifyId]; // noch nicht gezeigt → bleibt fällig
+      } else if (u.reason === 'artist') {
         backToArtist.push({ id: u.item.features.spotifyId, artist: u.artist ?? '' });
       } else if (u.reason === 'later') {
         const id = u.item.features.spotifyId;
@@ -289,8 +328,7 @@ export class Engine {
         if (!t.artists.some((a) => norm(a.name) === want)) continue; // nur echte Treffer (von oder mit)
         const id = t.id;
         if (this.likes.has(id) || this.seen.has(id) || found.has(id)) continue;
-        const d = this.dislikes.get(id);
-        if (d && !mayResuggest(d.at, now)) continue;
+        if (this.dislikes.has(id) || this.postponed.has(id)) continue;
         const info = infoFromTrack(t);
         this.info.set(id, info);
         found.set(id, info);
@@ -339,8 +377,14 @@ export class Engine {
 
   /** Nächster Titel im Fluss: abwechselnd normal und (falls markiert) Künstler-Spezial. */
   private takeFlowPick(): Pick | null {
-    this.flowPos++;
-    if (artistTurn(this.flowPos, this.artistQueue.length)) {
+    // Position, an der dieser Titel angezeigt wird (zählt nur wirklich gezeigte Vorschläge,
+    // damit Neuberechnungen der Vorauswahl die Abstände nicht verkürzen)
+    const pos = this.counter + 1 + this.front.length + this.upcoming.length;
+    if (revisitTurn(pos, this.dislikes.size + this.postponed.size)) {
+      const r = this.revisitPick();
+      if (r) return r;
+    }
+    if (artistTurn(pos, this.artistQueue.length)) {
       const a = this.artistPick();
       if (a) return a;
     }
@@ -363,8 +407,126 @@ export class Engine {
   markUnrated(id: string): void {
     if (this.likes.has(id) || this.dislikes.has(id)) return;
     const prev = this.offers.get(id) ?? this.later.find((e) => e.id === id)?.offers ?? 0;
+    if (laterExhausted(prev)) {
+      // Schon mehrfach ohne Bewertung gelaufen → in die lange Pause (ca. 3 Monate)
+      const info = this.info.get(id);
+      if (info) void this.postpone(info).catch(() => undefined);
+      this.later = this.later.filter((e) => e.id !== id);
+      this.saveLater();
+      return;
+    }
     this.later = addLater(this.later, id, Date.now(), this.counter, prev);
     this.saveLater();
+  }
+
+  /**
+   * "Später": Titel ruht ca. 3 Monate und kommt dann als Wiedervorlage zurück.
+   * Gespeichert in der privaten Playlist "Rhythmus-Später" (gilt auf allen Geräten).
+   * Ein früher abgelehnter Titel wechselt dabei von "Abgelehnt" nach "Später".
+   */
+  postpone(info: TrackInfo): Promise<void> {
+    if (this.likes.has(info.id)) return Promise.resolve();
+    const wasPostponed = this.postponed.has(info.id);
+    const wasDisliked = this.dislikes.has(info.id);
+    this.info.set(info.id, info);
+    this.dislikes.delete(info.id);
+    this.postponed.set(info.id, { info, at: Date.now() });
+    this.later = this.later.filter((e) => e.id !== info.id);
+    this.saveLater();
+    this.rescore();
+    return this.enqueue(async () => {
+      if (wasDisliked) await sp.removeFromPlaylist(this.rejId, [info.uri]);
+      if (wasPostponed) await sp.removeFromPlaylist(this.postId, [info.uri]); // Datum erneuern
+      await sp.addToPlaylist(this.postId, [info.uri]);
+    });
+  }
+
+  // ---------- Zurück ----------
+
+  /** Vor einer Aktion aufrufen: merkt sich den Zustand, damit "Zurück" ihn wiederherstellen kann. */
+  record(kind: ActionKind, s: Suggestion, positionMs: number): void {
+    const id = s.id;
+    const prev: StateSnap = {
+      liked: this.likes.get(id),
+      disliked: this.dislikes.get(id),
+      postponed: this.postponed.get(id),
+      laterEntry: this.later.find((e) => e.id === id),
+    };
+    this.undoStack.push({ s, kind, positionMs, prev });
+    if (this.undoStack.length > 10) this.undoStack.shift();
+  }
+
+  canUndo(): boolean { return this.undoStack.length > 0; }
+
+  /**
+   * Letzte Aktion rückgängig machen. Der zuletzt angezeigte Titel (shown) kommt als nächster wieder dran.
+   * Gibt den wiederhergestellten Vorschlag samt Position zurück.
+   */
+  undo(shown: Suggestion | null): UndoEntry | null {
+    const e = this.undoStack.pop();
+    if (!e) return null;
+    const { s, prev } = e;
+    const id = s.id;
+    const uri = s.uri || `spotify:track:${id}`;
+    const ops: (() => Promise<void>)[] = [];
+
+    const nowLiked = this.likes.has(id);
+    if (nowLiked && !prev.liked) { this.likes.delete(id); ops.push(() => sp.removeFromLibrary([uri])); }
+    if (!nowLiked && prev.liked) { this.likes.set(id, prev.liked); ops.push(() => sp.saveToLibrary([uri])); }
+
+    const nowDis = this.dislikes.has(id);
+    if (nowDis && !prev.disliked) { this.dislikes.delete(id); ops.push(() => sp.removeFromPlaylist(this.rejId, [uri])); }
+    else if (!nowDis && prev.disliked) { this.dislikes.set(id, prev.disliked); ops.push(() => sp.addToPlaylist(this.rejId, [uri])); }
+    else if (prev.disliked) this.dislikes.set(id, prev.disliked);
+
+    const nowPost = this.postponed.has(id);
+    if (nowPost && !prev.postponed) { this.postponed.delete(id); ops.push(() => sp.removeFromPlaylist(this.postId, [uri])); }
+    else if (!nowPost && prev.postponed) { this.postponed.set(id, prev.postponed); ops.push(() => sp.addToPlaylist(this.postId, [uri])); }
+    else if (prev.postponed) this.postponed.set(id, prev.postponed);
+
+    this.later = this.later.filter((x) => x.id !== id);
+    if (prev.laterEntry) this.later.push(prev.laterEntry);
+    this.saveLater();
+
+    if (ops.length) void this.enqueue(async () => { for (const op of ops) await op(); }).catch(() => undefined);
+
+    this.rescore();
+    // Der inzwischen gezeigte Titel kommt direkt danach wieder dran
+    this.front = this.front.filter((p) => p.item.features.spotifyId !== id);
+    if (shown && shown.id !== id) {
+      const sc = score(shown.features, this.rated(this.likes), this.rated(this.dislikes), Date.now());
+      if (shown.reason === 'artist' && shown.special) this.front.unshift({ item: sc, reason: 'artist', artist: shown.special.artist });
+      else this.front.unshift({ item: sc, reason: shown.reason === 'explore' ? 'explore' : 'match' });
+    }
+    return e;
+  }
+
+  /** Fällige Wiedervorlagen (abgelehnt/verschoben vor mehr als ca. 3 Monaten), älteste zuerst. */
+  dueRevisits(now = Date.now()): { id: string; kind: 'rejected' | 'postponed'; at: number }[] {
+    const quiet = REVISIT.quietDays * 86_400_000;
+    const out: { id: string; kind: 'rejected' | 'postponed'; at: number }[] = [];
+    const add = (id: string, at: number, kind: 'rejected' | 'postponed') => {
+      if (!mayResuggest(at, now) || this.likes.has(id) || this.seen.has(id)) return;
+      if (now - (this.revisitShown[id] ?? 0) < quiet) return;
+      if (this.upcoming.some((u) => u.item.features.spotifyId === id)) return;
+      out.push({ id, kind, at });
+    };
+    this.dislikes.forEach((v, id) => add(id, v.at, 'rejected'));
+    this.postponed.forEach((v, id) => add(id, v.at, 'postponed'));
+    return out.sort((a, b) => a.at - b.at);
+  }
+
+  private revisitPick(): Pick | null {
+    const now = Date.now();
+    for (const r of this.dueRevisits(now)) {
+      const f = this.features.get(r.id);
+      if (!f) continue;
+      this.revisitShown[r.id] = now;
+      saveJson(K_REVISIT_SHOWN, this.revisitShown);
+      const sc = score(f, this.rated(this.likes), this.rated(this.dislikes.size ? new Map([...this.dislikes].filter(([id]) => id !== r.id)) : this.dislikes), now);
+      return { item: sc, reason: 'revisit', revisit: { kind: r.kind, at: r.at } };
+    }
+    return null;
   }
 
   laterCount(): number { return this.later.length; }
@@ -414,7 +576,7 @@ export class Engine {
     });
     if (due.length) this.saveLater();
     if (this.pool.length < 12) void this.refill().catch(() => undefined);
-    return this.upcoming.slice(0, n).map((u) => u.item.features.spotifyId);
+    return [...this.front, ...this.upcoming].slice(0, n).map((u) => u.item.features.spotifyId);
   }
 
   private async toSuggestion(pick: Pick): Promise<Suggestion> {
@@ -433,6 +595,7 @@ export class Engine {
       score: pick.item.score,
       offers: pick.reason === 'later' ? this.offers.get(id) : undefined,
       special: pick.reason === 'artist' ? this.servedArtist(pick.artist ?? '') : undefined,
+      revisit: pick.revisit ? { kind: pick.revisit.kind, months: monthsAgo(pick.revisit.at, Date.now()) } : undefined,
     };
   }
 
@@ -441,10 +604,21 @@ export class Engine {
    * diesen als aktuellen Vorschlag übernehmen, übersprungene gelten als gesehen.
    */
   async jumpTo(id: string): Promise<Suggestion | null> {
+    const fi = this.front.findIndex((u) => u.item.features.spotifyId === id);
+    if (fi >= 0) {
+      const pick = this.front[fi];
+      this.front.splice(fi, 1);
+      return this.toSuggestion(pick);
+    }
     const idx = this.upcoming.findIndex((u) => u.item.features.spotifyId === id);
     if (idx >= 0) {
-      // Übersprungene (⏭) gelten als unbewertet → später nochmal
-      for (const u of this.upcoming.slice(0, idx)) { this.seen.add(u.item.features.spotifyId); this.markUnrated(u.item.features.spotifyId); }
+      // Übersprungene (⏭ in Spotify) gelten wie "Später" → ca. 3 Monate Pause
+      for (const u of this.upcoming.slice(0, idx)) {
+        const uid = u.item.features.spotifyId;
+        this.seen.add(uid);
+        const info = this.info.get(uid);
+        if (info) void this.postpone(info).catch(() => undefined);
+      }
       const pick = this.upcoming[idx];
       this.upcoming = this.upcoming.slice(idx + 1);
       return this.toSuggestion(pick);
@@ -478,11 +652,19 @@ export class Engine {
     // Nur warten, wenn der Vorrat fast leer ist – sonst kommt der nächste Titel sofort
     for (let tries = 0; this.pool.length + this.upcoming.length + this.artistQueue.length < 3 && tries < 3; tries++) await this.refill();
     const now = Date.now();
-    let pick: Pick | null = await this.laterPick();
+    let pick: Pick | null = null;
+    while (this.front.length && !pick) {
+      const f = this.front.shift()!;
+      if (!this.likes.has(f.item.features.spotifyId)) pick = f;
+    }
+    pick ??= await this.laterPick();
     while (this.upcoming.length && !pick) {
       const u = this.upcoming.shift()!;
       const uid = u.item.features.spotifyId;
-      if (u.reason === 'later' || u.reason === 'artist' ? !this.likes.has(uid) && !this.dislikes.has(uid) : this.allowed(uid, now)) pick = u;
+      const ok = u.reason === 'revisit' ? !this.likes.has(uid)
+        : u.reason === 'later' || u.reason === 'artist' ? !this.likes.has(uid) && !this.dislikes.has(uid)
+        : this.allowed(uid, now);
+      if (ok) pick = u;
     }
     pick ??= this.takeFlowPick();
     if (!pick) return null;
@@ -498,6 +680,10 @@ export class Engine {
   rate(info: TrackInfo, yes: boolean): Promise<void> {
     const wasLiked = this.likes.has(info.id);
     const wasDisliked = this.dislikes.has(info.id);
+    const wasPostponed = this.postponed.has(info.id);
+    this.postponed.delete(info.id);
+    this.later = this.later.filter((e) => e.id !== info.id);
+    this.saveLater();
     this.info.set(info.id, info);
     if (yes) {
       this.dislikes.delete(info.id);
@@ -507,7 +693,8 @@ export class Engine {
       this.dislikes.set(info.id, { info, at: Date.now() });
     }
     this.rescore();
-    return (async () => {
+    return this.enqueue(async () => {
+      if (wasPostponed) await sp.removeFromPlaylist(this.postId, [info.uri]);
       if (yes) {
         if (wasDisliked) await sp.removeFromPlaylist(this.rejId, [info.uri]);
         if (!wasLiked) await sp.saveToLibrary([info.uri]);
@@ -518,7 +705,7 @@ export class Engine {
         if (wasDisliked) await sp.removeFromPlaylist(this.rejId, [info.uri]);
         await sp.addToPlaylist(this.rejId, [info.uri]);
       }
-    })();
+    });
   }
 
   /** Für die Suche: als Favorit speichern und auf das Speichern warten. */
