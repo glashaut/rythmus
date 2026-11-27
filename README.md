@@ -19,4 +19,4 @@ Für Änderungen siehe `quellcode/README.md`. Kurz zusammengefasst:
 2. Den Inhalt von `quellcode/dist/` nach oben kopieren.
 3. Für die Windows-Version zusätzlich `./build-exe.sh` ausführen (Go 1.24+ nötig).
 
-Version: 0.11
+Version: 0.12

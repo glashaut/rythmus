@@ -160,6 +160,8 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
   const [msg, setMsg] = useState('');
   const [hearted, setHearted] = useState('');
   const [note, setNote] = useState('');
+  const [startAt, setStartAt] = useState(0);
+  const posRef = useRef(0);
   const [artistBusy, setArtistBusy] = useState('');
   const started = useRef(false);
 
@@ -167,6 +169,8 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
     setLoading(true); setMsg(''); setHearted('');
     try {
       const s = await engine.next();
+      setStartAt(0);
+      posRef.current = 0;
       setAutoplay(play);
       setCurrent(s);
       if (!s) setMsg('Gerade keine passenden Kandidaten gefunden. Probier es gleich nochmal.');
@@ -180,11 +184,16 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
   // Spotify ist selbst weitergesprungen (⏭ im Sperrbildschirm oder Titelende) → diesen Vorschlag anzeigen
   const currentRef = useRef<Suggestion | null>(null);
   currentRef.current = current;
-  const onExternalTrack = useCallback(async (id: string) => {
-    // Der bisher angezeigte Titel wurde nicht bewertet → später nochmal
-    if (currentRef.current) engine.markUnrated(currentRef.current.id);
+  const onExternalTrack = useCallback(async (id: string, endedNaturally: boolean) => {
+    // Der bisher angezeigte Titel wurde nicht bewertet: zu Ende gelaufen → bald nochmal, mit ⏭ übersprungen → wie "Später"
+    const cur = currentRef.current;
+    if (cur) {
+      engine.record(endedNaturally ? 'skip' : 'later', cur, posRef.current);
+      if (endedNaturally && cur.reason !== 'revisit') engine.markUnrated(cur.id);
+      else void engine.postpone(cur).catch(() => undefined);
+    }
     const s = await engine.jumpTo(id);
-    if (s) { setAutoplay(false); setCurrent(s); onChange(); }
+    if (s) { setStartAt(0); posRef.current = 0; setAutoplay(false); setCurrent(s); onChange(); }
   }, [engine, onChange]);
 
   // ♥ in Spotify (z. B. im Sperrbildschirm) zählt als Ja
@@ -211,10 +220,37 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
     if (!current || loading) return;
     setNote('');
     unlockBrowserAudio();
+    engine.record(yes ? 'yes' : 'no', current, posRef.current);
     // Lernstand sofort anpassen, Speichern läuft im Hintergrund, nächster Titel startet direkt
     engine.rate(current, yes).catch((e: Error) => setMsg(`Speichern fehlgeschlagen: ${e.message}`));
     onChange();
     void load(true);
+  };
+
+  const postponeCurrent = () => {
+    if (!current || loading) return;
+    setNote('');
+    unlockBrowserAudio();
+    engine.record('later', current, posRef.current);
+    // "Später": Titel ruht ca. 3 Monate und kommt dann als Wiedervorlage zurück
+    engine.postpone(current).catch((e: Error) => setMsg(`Speichern fehlgeschlagen: ${e.message}`));
+    onChange();
+    void load(true);
+  };
+
+  const undo = () => {
+    if (loading) return;
+    unlockBrowserAudio();
+    const e = engine.undo(current);
+    if (!e) return;
+    const label = { yes: '„Ja“', no: '„Nein“', later: '„Später“', skip: 'Weiterspringen' }[e.kind];
+    setNote(`↩ ${label} für „${e.s.title || 'den Titel'}“ rückgängig gemacht – er spielt weiter.`);
+    setMsg('');
+    setStartAt(Math.max(0, e.positionMs - 3000));
+    posRef.current = e.positionMs;
+    setAutoplay(true);
+    setCurrent(e.s);
+    onChange();
   };
 
   const noFavs = engine.likes.size === 0;
@@ -276,7 +312,8 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
       {current && (
         <div className={`card ${loading ? 'dim' : ''}`}>
           <div className={`badge ${current.reason}`}>
-            {current.reason === 'artist' && current.special ? <>⭐ Künstler-Spezial: <b>{current.special.artist}</b> ({current.special.n}/{current.special.total})</>
+            {current.reason === 'revisit' && current.revisit ? <>🔄 Vor {current.revisit.months} {current.revisit.months === 1 ? 'Monat' : 'Monaten'} {current.revisit.kind === 'rejected' ? 'abgelehnt' : 'auf später verschoben'} – neue Chance?</>
+              : current.reason === 'artist' && current.special ? <>⭐ Künstler-Spezial: <b>{current.special.artist}</b> ({current.special.n}/{current.special.total})</>
               : current.reason === 'later' ? `🔁 Nochmal zur Auswahl – noch nicht bewertet${current.offers && current.offers > 1 ? ` (${current.offers}. Mal)` : ''}`
               : current.reason === 'explore' ? '🎲 Ausreißer – mal was anderes'
               : current.nearest ? <>Ähnlicher Rhythmus wie <b>{current.nearest}</b></> : '🎲 Zufallsfund'}
@@ -285,15 +322,22 @@ function Discover({ engine, onChange, goSearch }: { engine: Engine; onChange: ()
             trackId={current.id} autoplay={autoplay} durationMs={current.durationMs}
             title={current.title} artists={current.artists} image={current.image}
             getUpcoming={() => engine.upcomingIds(25)} onExternalTrack={(id) => void onExternalTrack(id)}
-            onEnded={() => { engine.markUnrated(current.id); void load(true); }}
+            onEnded={() => {
+              engine.record('skip', current, posRef.current);
+              if (current.reason === 'revisit') void engine.postpone(current).catch(() => undefined);
+              else engine.markUnrated(current.id);
+              void load(true);
+            }}
+            positionRef={posRef} startAtMs={startAt}
             favorite={favorite} onToggleFavorite={toggleFavorite}
             below={artistRow}
           />
           <FeatureBars f={current.features} />
           <a className="link small" href={`https://open.spotify.com/track/${current.id}`} target="_blank" rel="noreferrer">In Spotify öffnen ↗</a>
           <div className="actions">
+            <button className="undo" disabled={loading || !engine.canUndo()} onClick={undo} aria-label="Zurück: letzte Aktion rückgängig" title="Zurück: letzte Aktion rückgängig">↩</button>
             <button className="no" disabled={loading} onClick={() => rate(false)}>👎 Nein</button>
-            <button className="skip" disabled={loading} onClick={() => { unlockBrowserAudio(); engine.markUnrated(current.id); void load(true); }}>Später</button>
+            <button className="skip" disabled={loading} onClick={postponeCurrent}>Später</button>
             <button className="yes" disabled={loading} onClick={() => rate(true)}>👍 Ja</button>
           </div>
         </div>

@@ -96,11 +96,30 @@ export function score(c: Features, likes: Rated[], dislikes: Rated[], now: numbe
 }
 
 /** Darf ein früher abgelehnter Titel wieder auftauchen? Erst wenn das "Nein" mindestens halb verblasst ist. */
+/** Wiedervorlage: Abgelehnte und verschobene Titel ruhen so lange, danach gibt es eine neue Chance. */
+export const REVISIT = {
+  afterDays: 90,  // ca. 3 Monate Pause
+  every: 8,       // höchstens jeder 8. Vorschlag ist eine Wiedervorlage
+  quietDays: 14,  // nach einer Wiedervorlage ohne Reaktion frühestens nach 14 Tagen erneut
+};
+const DAY_MS = 86_400_000;
+
+/** Darf ein abgelehnter/verschobener Titel wieder auftauchen? Erst nach der Pause (ca. 3 Monate). */
 export function mayResuggest(rejectedAt: number, now: number): boolean {
-  return decay(rejectedAt, now) <= 0.5;
+  return now - rejectedAt >= REVISIT.afterDays * DAY_MS;
 }
 
-export type Pick = { item: Scored; reason: 'match' | 'explore' | 'later' | 'artist'; artist?: string };
+/** Ganze Monate seit einem Zeitpunkt (für den Hinweis "vor 3 Monaten"). */
+export function monthsAgo(at: number, now: number): number {
+  return Math.max(1, Math.round((now - at) / (30 * DAY_MS)));
+}
+
+/** Kommt an Flussposition pos eine Wiedervorlage dran? */
+export function revisitTurn(pos: number, due: number): boolean {
+  return due > 0 && pos % REVISIT.every === 0;
+}
+
+export type Pick = { item: Scored; reason: 'match' | 'explore' | 'later' | 'artist' | 'revisit'; artist?: string; revisit?: { kind: 'rejected' | 'postponed'; at: number } };
 
 /**
  * Nächsten Vorschlag wählen. Meist der beste Treffer (mit etwas Zufall unter den besten 5),
@@ -131,10 +150,15 @@ export const LATER = {
 };
 
 /** Unbewerteten Titel vormerken. Gibt die neue Liste zurück (unverändert, wenn er schon zu oft kam). */
+/** Wurde der Titel schon so oft ohne Bewertung angeboten, dass er in die lange Pause soll? */
+export function laterExhausted(previousOffers: number): boolean {
+  return previousOffers + 1 >= LATER.maxOffers + 1;
+}
+
 export function addLater(list: LaterEntry[], id: string, now: number, counter: number, previousOffers = 0): LaterEntry[] {
   const offers = previousOffers + 1;
   const rest = list.filter((e) => e.id !== id);
-  if (offers >= LATER.maxOffers + 1) return rest;
+  if (laterExhausted(previousOffers)) return rest;
   return [...rest, { id, dueAt: now + LATER.afterMs, dueCount: counter + LATER.afterSuggestions, offers }].slice(-LATER.maxEntries);
 }
 
